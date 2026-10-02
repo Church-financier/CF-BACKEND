@@ -1,0 +1,1 @@
+{"version":3,"file":"organizationController.d.ts","sourceRoot":"","sources":["../../src/controllers/organizationController.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AACnC,OAAO,EAAE,aAAa,EAAE,MAAM,gCAAgC,CAAC;AAG/D,eAAO,MAAM,eAAe,QAAe,aAAa,OAAO,QAAQ,gDAgBtE,CAAC;AAEF,eAAO,MAAM,kBAAkB,QAAe,aAAa,OAAO,QAAQ,gDAyBzE,CAAC;AAEF,eAAO,MAAM,sBAAsB;;;CAA0C,CAAC"}

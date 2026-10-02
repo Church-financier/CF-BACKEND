@@ -1,0 +1,1 @@
+{"version":3,"file":"sessionTimeoutMiddleware.d.ts","sourceRoot":"","sources":["../../src/middleware/sessionTimeoutMiddleware.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,YAAY,EAAE,MAAM,SAAS,CAAC;AACjD,OAAO,EAAE,aAAa,EAAE,MAAM,gCAAgC,CAAC;AAI/D,eAAO,MAAM,2BAA2B,QACjC,aAAa,OACb,QAAQ,QACP,YAAY,uDA8BnB,CAAC"}

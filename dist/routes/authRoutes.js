@@ -1,0 +1,25 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const authController_1 = require("../controllers/authController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const validationMiddleware_1 = require("../middleware/validationMiddleware");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const schemas_1 = require("../schemas");
+const router = (0, express_1.Router)();
+router.post("/login", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.loginSchema), authController_1.authController.login);
+router.post("/login/mfa", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.mfaVerifySchema), authController_1.authController.verifyMfa);
+router.post("/signup", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.signupSchema), authController_1.authController.signup);
+router.post("/register", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.registerChurchSchema), authController_1.authController.registerChurch);
+router.post("/logout", authMiddleware_1.authenticate, authController_1.authController.logout);
+router.post("/refresh", authController_1.authController.refresh);
+router.get("/me", authMiddleware_1.authenticate, authController_1.authController.me);
+router.patch("/me", authMiddleware_1.authenticate, (0, validationMiddleware_1.validateBody)(schemas_1.updateProfileSchema), authController_1.authController.updateProfile);
+router.post("/change-password", authMiddleware_1.authenticate, (0, validationMiddleware_1.validateBody)(schemas_1.changePasswordSchema), authController_1.authController.changePassword);
+router.post("/forgot-password", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.forgotPasswordSchema), authController_1.authController.forgotPassword);
+router.post("/reset-password", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.resetPasswordSchema), authController_1.authController.resetPassword);
+router.post("/verify-email", rateLimiter_1.authLimiter, (0, validationMiddleware_1.validateBody)(schemas_1.verifyEmailSchema), authController_1.authController.verifyEmail);
+router.post("/mfa/enable", authMiddleware_1.authenticate, authController_1.authController.enableMfa);
+router.post("/mfa/disable", authMiddleware_1.authenticate, authController_1.authController.disableMfa);
+exports.default = router;
+//# sourceMappingURL=authRoutes.js.map

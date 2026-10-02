@@ -1,0 +1,27 @@
+﻿"Kingdom School's Organization"
+"Balance Sheet"
+"Period: All dates | Basis: Accrual, posted journals only"
+"Base Currency: USD (US Dollar) | Generated: 01 Oct 2026, 22:24 | Timezone: Africa/Lagos"
+
+"Assets"
+"Account Code","Account Name","Balance (USD)"
+"1000","Cash/Bank","$0.00"
+"1100","Accounts Receivable","$0.00"
+"","TOTAL ASSETS","$0.00"
+
+"Liabilities"
+"Account Code","Account Name","Balance (USD)"
+"2000","Accounts Payable","$0.00"
+"","TOTAL LIABILITIES","$0.00"
+
+"Equity"
+"Account Code","Account Name","Balance (USD)"
+"3000","Equity","$0.00"
+"","Net Income","$0.00"
+"","Total Equity (incl. earnings)","$0.00"
+
+"Balance Check"
+"Account Code","Account Name","Balance (USD)"
+"","Total Liabilities + Equity","$0.00"
+"","BALANCED","YES"
+

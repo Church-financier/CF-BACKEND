@@ -1,0 +1,33 @@
+import { Request, Response } from "express";
+import { TenantRequest } from "../middleware/tenantMiddleware";
+export declare const login: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const verifyMfa: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const enableMfa: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const disableMfa: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const signup: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const registerChurch: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const logout: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const refresh: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const me: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const updateProfile: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const changePassword: (req: TenantRequest, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const forgotPassword: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const resetPassword: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const verifyEmail: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const authController: {
+    login: typeof login;
+    verifyMfa: typeof verifyMfa;
+    enableMfa: typeof enableMfa;
+    disableMfa: typeof disableMfa;
+    signup: typeof signup;
+    registerChurch: typeof registerChurch;
+    logout: typeof logout;
+    refresh: typeof refresh;
+    me: typeof me;
+    updateProfile: typeof updateProfile;
+    changePassword: typeof changePassword;
+    forgotPassword: typeof forgotPassword;
+    resetPassword: typeof resetPassword;
+    verifyEmail: typeof verifyEmail;
+};
+//# sourceMappingURL=authController.d.ts.map

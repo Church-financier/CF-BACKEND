@@ -1,0 +1,576 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                  String   @id @default(uuid())
+  name                String
+  currency            String   @default("NGN")
+  fiscalYearStartMonth Int     @default(1)
+  timezone            String   @default("Africa/Lagos")
+  requireMfa          Boolean  @default(false)
+  sessionTimeoutMinutes Int    @default(480)
+  address             String?
+  phone               String?
+  email               String?
+  logoUrl             String?
+  createdAt           DateTime @default(now())
+
+  users              User[]
+  funds              Fund[]
+  ledgerEntries      LedgerEntry[]
+  disbursements      DisbursementRequest[]
+  pledges            Pledge[]
+  departments        Department[]
+  vendors            Vendor[]
+  accounts           ChartOfAccounts[]
+  journals           JournalEntry[]
+  budgets            Budget[]
+  members            Member[]
+  periods            Period[]
+  auditLogs          AuditLog[]
+  lineItems          DisbursementLineItem[]
+  budgetPeriods      BudgetPeriod[]
+}
+
+model User {
+  id                     String                @id @default(uuid())
+  organizationId         String
+  email                  String                @unique
+  password               String
+  name                   String
+  role                   Role                  @default(SUPER_ADMIN)
+  mfaEnabled             Boolean               @default(false)
+  mfaSecret              String?
+  emailVerified          Boolean               @default(false)
+  failedLoginCount       Int                   @default(0)
+  lockoutUntil           DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  organization           Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  auditLogs              AuditLog[]
+  departments            Department[]
+  disbursementsApproved  DisbursementRequest[] @relation("ApprovedBy")
+  disbursementsApprovedFirst  DisbursementRequest[] @relation("FirstApprovedBy")
+  disbursementsApprovedSecond DisbursementRequest[] @relation("SecondApprovedBy")
+  disbursementsRequested DisbursementRequest[] @relation("RequestedBy")
+  journals               JournalEntry[]
+  recordedLedgerEntries  LedgerEntry[]
+  passwordResets         PasswordResetToken[]
+  emailVerifications     EmailVerificationToken[]
+  mfaChallenges          MfaChallenge[]
+  pledgeContributions    PledgeContribution[]
+  refreshTokens          RefreshToken[]
+  submittedBudgets       DepartmentBudget[]    @relation("SubmittedBudgets")
+
+  @@index([role])
+  @@index([organizationId])
+}
+
+model Fund {
+  id             String        @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  isRestricted   Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  budgets        Budget[]
+  ledgerEntries  LedgerEntry[]
+  pledges        Pledge[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+}
+
+model LedgerEntry {
+  id             String          @id @default(uuid())
+  organizationId String
+  fundId         String
+  type           TransactionType
+  amountInKobo   BigInt
+  description    String
+  recordedById   String
+  createdAt      DateTime        @default(now())
+  transactionDate DateTime       @default(now())
+  memberId       String?
+  contributionMethod String?
+  notes          String?
+  journalId      String?
+  reversedById   String?         @unique
+  reversalOf     LedgerEntry?    @relation("Reversal", fields: [reversedById], references: [id])
+  reversals      LedgerEntry[]   @relation("Reversal")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fund           Fund            @relation(fields: [fundId], references: [id])
+  journal        JournalEntry?   @relation(fields: [journalId], references: [id])
+  recordedBy     User            @relation(fields: [recordedById], references: [id])
+  member         Member?         @relation("MemberContributions", fields: [memberId], references: [id], onDelete: SetNull)
+  pledgeContributions PledgeContribution[]
+
+  @@index([fundId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([recordedById])
+  @@index([organizationId])
+  @@index([fundId, createdAt])
+}
+
+model DisbursementRequest {
+  id                  String                 @id @default(uuid())
+  organizationId      String
+  amountInKobo        BigInt
+  purpose             String
+  requestedById       String
+  approvedById        String?
+  firstApprovedById   String?
+  secondApprovedById  String?
+  vendorId            String?
+  departmentId        String?
+  status              DisbursementStatus     @default(PENDING)
+  paymentMethod       String?
+  paidAt              DateTime?
+  paymentReference    String?
+  paymentNotes        String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  approvedBy          User?                  @relation("ApprovedBy", fields: [approvedById], references: [id])
+  firstApprovedBy     User?                  @relation("FirstApprovedBy", fields: [firstApprovedById], references: [id])
+  secondApprovedBy    User?                  @relation("SecondApprovedBy", fields: [secondApprovedById], references: [id])
+  department          Department?            @relation(fields: [departmentId], references: [id])
+  requestedBy         User                   @relation("RequestedBy", fields: [requestedById], references: [id])
+  vendor              Vendor?                @relation(fields: [vendorId], references: [id])
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lineItems           DisbursementLineItem[]
+
+  @@index([requestedById])
+  @@index([createdAt])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model DisbursementLineItem {
+  id              String              @id @default(uuid())
+  organizationId  String
+  disbursementId  String
+  description     String
+  amountInKobo    BigInt
+  receiptUrl      String?
+  createdAt       DateTime            @default(now())
+  disbursement    DisbursementRequest @relation(fields: [disbursementId], references: [id], onDelete: Cascade)
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([disbursementId])
+  @@index([organizationId])
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String
+  action         String
+  details        Json
+  ipAddress      String?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([organizationId])
+}
+
+model ChartOfAccounts {
+  id             String            @id @default(uuid())
+  organizationId String
+  code           String
+  name           String
+  type           AccountType
+  parentId       String?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent         ChartOfAccounts?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children       ChartOfAccounts[] @relation("AccountHierarchy")
+  journalLines   JournalLine[]
+  budgetItems    BudgetItem[]
+
+  @@unique([code, organizationId])
+  @@index([type])
+  @@index([parentId])
+  @@index([organizationId])
+}
+
+model JournalEntry {
+  id             String        @id @default(uuid())
+  organizationId String
+  date           DateTime      @default(now())
+  description    String
+  reference      String?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  status         JournalStatus @default(POSTED)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User          @relation(fields: [createdById], references: [id])
+  lines          JournalLine[]
+  ledgerEntries  LedgerEntry[]
+
+  @@index([createdById])
+  @@index([date])
+  @@index([organizationId])
+}
+
+model JournalLine {
+  id             String          @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  description    String?
+  debitInKobo    BigInt          @default(0)
+  creditInKobo   BigInt          @default(0)
+  createdAt      DateTime        @default(now())
+  account        ChartOfAccounts @relation(fields: [accountId], references: [id])
+  journalEntry   JournalEntry    @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+model Pledge {
+  id             String              @id @default(uuid())
+  organizationId String
+  memberId       String?
+  memberName     String
+  fundId         String
+  amountInKobo   BigInt
+  startDate      DateTime?
+  endDate        DateTime?
+  recurring      Boolean             @default(false)
+  status         PledgeStatus        @default(ACTIVE)
+  createdAt      DateTime            @default(now())
+  fund           Fund                @relation(fields: [fundId], references: [id])
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member         Member?             @relation(fields: [memberId], references: [id])
+  contributions  PledgeContribution[]
+
+  @@index([memberId])
+  @@index([fundId])
+  @@index([status])
+  @@index([organizationId])
+}
+
+model PledgeContribution {
+  id              String      @id @default(uuid())
+  organizationId  String
+  pledgeId        String
+  ledgerEntryId   String
+  amountInKobo    BigInt
+  recordedById    String
+  createdAt       DateTime    @default(now())
+  pledge          Pledge      @relation(fields: [pledgeId], references: [id], onDelete: Cascade)
+  ledgerEntry     LedgerEntry @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
+  recordedBy      User        @relation(fields: [recordedById], references: [id])
+
+  @@index([pledgeId])
+  @@index([ledgerEntryId])
+  @@index([organizationId])
+}
+
+model Member {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  fullName           String
+  email              String?
+  phone              String?
+  address            String?
+  memberNumber       String?
+  joinedAt           DateTime @default(now())
+  isActive           Boolean  @default(true)
+  portalAccess       Boolean  @default(false)
+  portalPasswordHash String?
+  createdAt          DateTime @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pledges            Pledge[]
+  contributions      LedgerEntry[] @relation("MemberContributions")
+
+  @@unique([email, organizationId])
+  @@index([organizationId])
+}
+
+model Department {
+  id             String                @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  headId         String
+  createdAt      DateTime              @default(now())
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  budgets        Budget[]
+  departmentBudgets DepartmentBudget[]
+  head           User                  @relation(fields: [headId], references: [id])
+  disbursements  DisbursementRequest[]
+
+  @@unique([name, organizationId])
+  @@index([headId])
+  @@index([organizationId])
+}
+
+model Budget {
+  id             String     @id @default(uuid())
+  organizationId String
+  departmentId   String
+  fundId         String
+  fiscalYear     Int
+  month          Int
+  amountInKobo   BigInt
+  createdAt      DateTime   @default(now())
+  department     Department @relation(fields: [departmentId], references: [id])
+  fund           Fund       @relation(fields: [fundId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, fundId, fiscalYear, month])
+  @@index([departmentId])
+  @@index([fundId])
+  @@index([fiscalYear, month])
+  @@index([organizationId])
+}
+
+model BudgetPeriod {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  fiscalYear         Int
+  status             BudgetPeriodStatus @default(DRAFT)
+  submissionDeadline DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentBudgets  DepartmentBudget[]
+
+  @@unique([organizationId, fiscalYear])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model DepartmentBudget {
+  id                   String              @id @default(uuid())
+  budgetPeriodId       String
+  departmentId         String
+  submittedByUserId    String
+  totalProposedAmount  BigInt              @default(0)
+  totalApprovedAmount  BigInt              @default(0)
+  status               DepartmentBudgetStatus @default(DRAFT)
+  rejectionNotes       String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  budgetPeriod         BudgetPeriod        @relation(fields: [budgetPeriodId], references: [id], onDelete: Cascade)
+  department           Department          @relation(fields: [departmentId], references: [id])
+  submittedBy          User                @relation("SubmittedBudgets", fields: [submittedByUserId], references: [id])
+  items                BudgetItem[]
+
+  @@unique([budgetPeriodId, departmentId])
+  @@index([budgetPeriodId])
+  @@index([departmentId])
+  @@index([submittedByUserId])
+  @@index([status])
+}
+
+model BudgetItem {
+  id                   String         @id @default(uuid())
+  departmentBudgetId   String
+  categoryId           String
+  itemName             String
+  description          String?
+  unitCost             BigInt
+  quantity             Int            @default(1)
+  proposedTotal        BigInt
+  approvedTotal        BigInt?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  departmentBudget     DepartmentBudget @relation(fields: [departmentBudgetId], references: [id], onDelete: Cascade)
+  category             ChartOfAccounts @relation(fields: [categoryId], references: [id])
+
+  @@index([departmentBudgetId])
+  @@index([categoryId])
+}
+
+enum BudgetPeriodStatus {
+  DRAFT
+  SUBMISSION_OPEN
+  UNDER_REVIEW
+  APPROVED_AND_LOCKED
+}
+
+enum DepartmentBudgetStatus {
+  DRAFT
+  SUBMITTED
+  REVISED
+  APPROVED
+  REJECTED
+}
+
+model Vendor {
+  id                String                @id @default(uuid())
+  organizationId    String
+  name              String
+  email             String?
+  phone             String?
+  address           String?
+  taxId             String?
+  bankName          String?
+  bankAccountName   String?
+  bankAccountNumber String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  disbursements     DisbursementRequest[]
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([name, organizationId])
+  @@index([name])
+  @@index([email])
+  @@index([taxId])
+  @@index([organizationId])
+}
+
+model Period {
+  id             String       @id @default(uuid())
+  organizationId String
+  fiscalYear     Int
+  month          Int
+  isLocked       Boolean      @default(false)
+  lockedById     String?
+  lockedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, fiscalYear, month])
+  @@index([isLocked])
+  @@index([organizationId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model MfaChallenge {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([code])
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?
+  userAgent  String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+enum Role {
+  SUPER_ADMIN
+  TREASURER
+  FINANCIAL_SECRETARY
+  AUDITOR
+  DEPARTMENT_HEAD
+}
+
+enum TransactionType {
+  DONATION
+  EXPENSE
+  TRANSFER
+  REVERSAL
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum PledgeStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum DisbursementStatus {
+  PENDING
+  FIRST_APPROVED
+  APPROVED
+  REJECTED
+  PAID
+  CANCELLED
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+/// Replay cache for state-changing financial requests (POST/PUT/PATCH on
+/// payments, disbursements, contributions and general ledger transactions).
+/// The client sends an `X-Idempotency-Key` UUID per form submission; a repeat
+/// of that key returns the stored response instead of executing the financial
+/// routine a second time, which is what stops double-clicks, network retries
+/// and flaky mobile connections from duplicating ledger rows.
+model IdempotencyKey {
+  id             String    @id @default(uuid())
+  key            String
+  userId         String
+  organizationId String
+  endpoint       String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([organizationId, key])
+  @@index([createdAt])
+  @@index([expiresAt])
+}
