@@ -18,16 +18,19 @@ const PERMISSIONS = {
         "budget:create", "budget:read", "budget:update", "budget:delete",
     ],
     TREASURER: [
-        "fund:read",
-        "disbursement:create", "disbursement:read", "disbursement:approve", "disbursement:reject",
+        "fund:create", "fund:read", "fund:update", "fund:delete",
         "ledger:read",
-        "chart-of-accounts:read",
-        "budget:read", "budget:update",
+        "disbursement:create", "disbursement:read", "disbursement:approve", "disbursement:reject",
+        "chart-of-accounts:create", "chart-of-accounts:read", "chart-of-accounts:update", "chart-of-accounts:delete",
+        "budget:create", "budget:read", "budget:update", "budget:delete",
         "report:read", "report:export",
         "vendor:create", "vendor:read", "vendor:update", "vendor:delete",
-        "member:read",
-        "contribution:read", "contribution:receipt",
-        "pledge:read",
+        // Read-only: the budget builder, master budget and disbursement forms all
+        // need the department directory to populate their selectors.
+        "department:read",
+        "member:create", "member:read", "member:update", "member:delete",
+        "contribution:read", "contribution:batch", "contribution:create", "contribution:update", "contribution:delete", "contribution:receipt",
+        "pledge:create", "pledge:read", "pledge:update", "pledge:delete",
     ],
     FINANCIAL_SECRETARY: [
         "member:create", "member:read", "member:update", "member:delete",

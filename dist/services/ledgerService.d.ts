@@ -1,4 +1,12 @@
 export declare const ledgerService: {
+    /**
+     * Posts a ledger entry.
+     *
+     * The period row is locked FOR UPDATE before its lock flag is read, so a post
+     * racing a period close either sees the closed period and is refused, or
+     * completes before the close. The write itself is a SERIALIZABLE
+     * transaction.
+     */
     createEntry(data: {
         fundId: string;
         type: "DONATION" | "EXPENSE" | "TRANSFER";
@@ -63,21 +71,16 @@ export declare const ledgerService: {
         journalId: string | null;
         reversedById: string | null;
     } | null>;
+    /**
+     * Reversal of a ledger entry runs in a SERIALIZABLE transaction with the
+     * original row locked FOR UPDATE and linked with a conditional update, so
+     * two concurrent reversals of the same entry cannot both succeed.
+     */
     reverseEntry(id: string, reversalReason: string, reversedById: string, organizationId: string): Promise<{
         original: {
             id: string;
-            organizationId: string;
             fundId: string;
-            type: import(".prisma/client").$Enums.TransactionType;
-            amountInKobo: bigint;
             description: string;
-            recordedById: string;
-            createdAt: Date;
-            transactionDate: Date;
-            memberId: string | null;
-            contributionMethod: string | null;
-            notes: string | null;
-            journalId: string | null;
             reversedById: string;
         };
         reversal: {

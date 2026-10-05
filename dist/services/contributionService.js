@@ -2,13 +2,32 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.contributionService = void 0;
 const prisma_1 = require("../lib/prisma");
+const client_1 = require("@prisma/client");
 const index_1 = require("../index");
 const mailerService_1 = require("./mailerService");
 const postingService_1 = require("./postingService");
 const fiscalYear_1 = require("../utils/fiscalYear");
 const systemSettingsService_1 = require("./systemSettingsService");
+/**
+ * Serializes pledge fulfilment.
+ *
+ * The pledge row is locked FOR UPDATE before its running total is read, so two
+ * contributions recorded at the same moment cannot both read a stale balance
+ * and leave the pledge short of (or double-counted against) its target.
+ */
+async function lockPledgeForUpdate(tx, organizationId, pledgeId) {
+    const rows = await tx.$queryRaw `
+    SELECT "id", "status", "amountInKobo"::text AS "amountInKobo", "fundId", "memberId"
+    FROM "Pledge"
+    WHERE "id" = ${pledgeId} AND "organizationId" = ${organizationId}
+    FOR UPDATE
+  `;
+    if (rows.length === 0)
+        return null;
+    return rows[0];
+}
 async function applyPledgeLink(tx, organizationId, pledgeId, ledgerEntryId, amountInKobo, recordedById, memberId, fundId) {
-    const pledge = await tx.pledge.findFirst({ where: { id: pledgeId, organizationId } });
+    const pledge = await lockPledgeForUpdate(tx, organizationId, pledgeId);
     if (!pledge || pledge.status === "CANCELLED")
         throw new Error("Active pledge not found in organization");
     if (pledge.fundId !== fundId || (pledge.memberId && pledge.memberId !== memberId)) {
@@ -96,18 +115,22 @@ exports.contributionService = {
             if (input.pledgeId) {
                 await applyPledgeLink(tx, input.organizationId, input.pledgeId, entry.id, input.amountInKobo, input.recordedById, memberId, input.fundId);
             }
+            // The income double entry is written in the same SERIALIZABLE
+            // transaction: the ledger row and its journal entry either both exist
+            // or neither does.
+            await (0, postingService_1.postContributionJournalEntry)({
+                tx,
+                organizationId: input.organizationId,
+                createdById: input.recordedById,
+                amountInKobo: input.amountInKobo,
+                fundId: input.fundId,
+                ledgerEntryId: entry.id,
+                description: entry.description,
+                date: transactionDate,
+            });
             return entry;
-        });
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 });
         (0, index_1.emitToOrganization)(input.organizationId, "contribution:created", { entries: [result], count: 1 });
-        await (0, postingService_1.postContributionJournalEntry)({
-            organizationId: input.organizationId,
-            createdById: input.recordedById,
-            amountInKobo: input.amountInKobo,
-            fundId: input.fundId,
-            ledgerEntryId: result.id,
-            description: result.description,
-            date: transactionDate,
-        }).catch((e) => console.error("[posting:contribution:error]", e));
         void sendReceiptIfPossible(input.organizationId, memberId ?? "", resolvedMemberName, result.id, input.amountInKobo);
         return result;
     },
@@ -153,6 +176,13 @@ exports.contributionService = {
             }
         }
         const entries = await prisma_1.prisma.$transaction(async (tx) => {
+            // Lock every pledge this batch touches in a stable order before
+            // creating rows, so two concurrent batches cannot deadlock on each
+            // other's pledges.
+            const batchPledgeIds = [...new Set(data.entries.map((e) => e.pledgeId).filter((v) => !!v))].sort();
+            for (const batchPledgeId of batchPledgeIds) {
+                await lockPledgeForUpdate(tx, data.organizationId, batchPledgeId);
+            }
             const created = [];
             for (const entry of data.entries) {
                 const e = await tx.ledgerEntry.create({
@@ -173,24 +203,24 @@ exports.contributionService = {
                     const memberId = entry.memberId ? memberIdByIdentifier.get(entry.memberId) ?? null : null;
                     await applyPledgeLink(tx, data.organizationId, entry.pledgeId, e.id, entry.amountInKobo, data.recordedById, memberId, entry.fundId);
                 }
+                await (0, postingService_1.postContributionJournalEntry)({
+                    tx,
+                    organizationId: data.organizationId,
+                    createdById: data.recordedById,
+                    amountInKobo: e.amountInKobo,
+                    fundId: e.fundId,
+                    ledgerEntryId: e.id,
+                    description: e.description,
+                    date: entry.date ? new Date(entry.date) : undefined,
+                });
                 created.push(e);
             }
             return created;
-        });
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
         (0, index_1.emitToOrganization)(data.organizationId, "contribution:created", { entries, count: entries.length });
         for (let i = 0; i < entries.length; i++) {
-            const e = entries[i];
             const src = data.entries[i];
-            await (0, postingService_1.postContributionJournalEntry)({
-                organizationId: data.organizationId,
-                createdById: data.recordedById,
-                amountInKobo: e.amountInKobo,
-                fundId: e.fundId,
-                ledgerEntryId: e.id,
-                description: e.description,
-                date: src.date ? new Date(src.date) : undefined,
-            }).catch((err) => console.error("[posting:contribution:error]", err));
-            void sendReceiptIfPossible(data.organizationId, src.memberId ? memberIdByIdentifier.get(src.memberId) ?? "" : "", src.memberName || (src.memberId ? memberNameByIdentifier.get(src.memberId) : undefined), e.id, e.amountInKobo);
+            void sendReceiptIfPossible(data.organizationId, src.memberId ? memberIdByIdentifier.get(src.memberId) ?? "" : "", src.memberName || (src.memberId ? memberNameByIdentifier.get(src.memberId) : undefined), entries[i].id, entries[i].amountInKobo);
         }
         return entries;
     },
@@ -266,6 +296,19 @@ exports.contributionService = {
         const description = `${contributionMethod} contribution from ${resolvedMemberName}${notes ? ` — ${notes}` : ""}`;
         const priorPledgeId = current.pledgeContributions[0]?.pledgeId;
         const updated = await prisma_1.prisma.$transaction(async (tx) => {
+            // Lock the pledges whose running totals this edit changes, so a
+            // concurrent fulfilment cannot interleave with the re-link below.
+            const touchedPledgeIds = [...new Set([priorPledgeId, pledgeId].filter((v) => !!v))];
+            for (const touchedPledgeId of touchedPledgeIds) {
+                await lockPledgeForUpdate(tx, organizationId, touchedPledgeId);
+            }
+            // Lock the contribution itself so a concurrent reversal cannot win the
+            // race between the read above and this write.
+            const lockedEntry = await tx.$queryRaw `
+          SELECT "id" FROM "LedgerEntry" WHERE "id" = ${id} AND "organizationId" = ${organizationId} FOR UPDATE
+        `;
+            if (lockedEntry.length === 0)
+                throw new Error("Contribution not found");
             const entry = await tx.ledgerEntry.update({
                 where: { id },
                 data: { fundId, amountInKobo, memberId, transactionDate, contributionMethod, notes, description },
@@ -316,7 +359,7 @@ exports.contributionService = {
                 },
             });
             return entry;
-        });
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 });
         (0, index_1.emitToOrganization)(organizationId, "contribution:updated", { entry: updated });
         return updated;
     },
@@ -332,6 +375,20 @@ exports.contributionService = {
         await ensureContributionPeriodOpen(organizationId, current.transactionDate);
         await ensureContributionPeriodOpen(organizationId, new Date());
         const result = await prisma_1.prisma.$transaction(async (tx) => {
+            // Lock the contribution and the pledges it feeds, so a concurrent
+            // reversal of the same row cannot create two reversing entries.
+            const locked = await tx.$queryRaw `
+          SELECT "id", "reversedById" FROM "LedgerEntry" WHERE "id" = ${id} AND "organizationId" = ${organizationId} FOR UPDATE
+        `;
+            if (locked.length === 0)
+                throw new Error("Contribution not found");
+            if (locked[0].reversedById) {
+                throw new Error("Contribution has already been reversed");
+            }
+            const pledgeIds = [...new Set(current.pledgeContributions.map((link) => link.pledgeId))];
+            for (const pledgeId of pledgeIds) {
+                await lockPledgeForUpdate(tx, organizationId, pledgeId);
+            }
             let reversalJournalId;
             if (current.journal) {
                 if (current.journal.status !== "POSTED" || current.journal.lines.length < 2) {
@@ -354,7 +411,13 @@ exports.contributionService = {
                         },
                     },
                 });
-                await tx.journalEntry.update({ where: { id: current.journal.id }, data: { status: "REVERSED" } });
+                const flipped = await tx.journalEntry.updateMany({
+                    where: { id: current.journal.id, status: "POSTED" },
+                    data: { status: "REVERSED" },
+                });
+                if (flipped.count !== 1) {
+                    throw new Error("The linked journal entry cannot be reversed");
+                }
                 reversalJournalId = reversalJournal.id;
             }
             const reversal = await tx.ledgerEntry.create({
@@ -369,14 +432,22 @@ exports.contributionService = {
                     journalId: reversalJournalId,
                 },
             });
-            await tx.ledgerEntry.update({ where: { id }, data: { reversedById: reversal.id } });
+            // Conditional write: if another request already linked a reversal, the
+            // unique `reversedById` column and this count check both refuse it.
+            const linked = await tx.ledgerEntry.updateMany({
+                where: { id, organizationId, reversedById: null },
+                data: { reversedById: reversal.id },
+            });
+            if (linked.count !== 1) {
+                throw new Error("Contribution has already been reversed");
+            }
             await tx.pledgeContribution.deleteMany({ where: { ledgerEntryId: id, organizationId } });
-            for (const pledgeId of new Set(current.pledgeContributions.map((link) => link.pledgeId))) {
+            for (const pledgeId of pledgeIds) {
                 await refreshPledgeStatus(tx, organizationId, pledgeId);
             }
             await tx.auditLog.create({ data: { organizationId, userId: recordedById, action: "CONTRIBUTION_DELETE", details: { contributionId: id, reversalId: reversal.id, reason } } });
             return { originalId: id, reversalId: reversal.id };
-        });
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 });
         (0, index_1.emitToOrganization)(organizationId, "contribution:deleted", result);
         return result;
     },

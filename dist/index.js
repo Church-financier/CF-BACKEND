@@ -30,6 +30,7 @@ const sessionTimeoutMiddleware_1 = require("./middleware/sessionTimeoutMiddlewar
 const serialize_1 = require("./utils/serialize");
 const jwt_1 = require("./utils/jwt");
 const prisma_1 = require("./lib/prisma");
+const idempotencyService_1 = require("./services/idempotencyService");
 const auditRoutes_1 = __importDefault(require("./routes/auditRoutes"));
 const memberRoutes_1 = __importDefault(require("./routes/memberRoutes"));
 const periodRoutes_1 = __importDefault(require("./routes/periodRoutes"));
@@ -170,6 +171,19 @@ function emitToOrganization(organizationId, event, payload) {
 }
 server.listen(PORT, async () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    // Replay cache housekeeping: drop keys that are past their window so the
+    // table cannot grow without bound. Unref'd so it never holds the process open.
+    const purge = () => {
+        void idempotencyService_1.idempotencyService
+            .purgeExpired()
+            .then((count) => {
+            if (count > 0)
+                console.log(`[idempotency] purged ${count} expired key(s)`);
+        })
+            .catch((err) => console.error("[idempotency] purge failed:", err.message));
+    };
+    purge();
+    setInterval(purge, 6 * 60 * 60 * 1000).unref();
     // Schema freshness check — helps the user spot a stale database
     try {
         const result = await prisma_1.prisma.$queryRaw `

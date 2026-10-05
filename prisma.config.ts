@@ -11,6 +11,8 @@ export default defineConfig({
   },
   engine: "classic",
   datasource: {
-    url: env("DATABASE_URL"),
+    // CLI operations (migrate/dev/deploy/push/studio) must bypass the
+    // transaction-mode pooler in DATABASE_URL, otherwise DDL hangs.
+    url: env("DIRECT_URL"),
   },
 });

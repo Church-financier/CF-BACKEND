@@ -1,0 +1,1 @@
+{"version":3,"file":"prismaErrors.d.ts","sourceRoot":"","sources":["../../src/utils/prismaErrors.ts"],"names":[],"mappings":"AAEA;;;;GAIG;AACH,wBAAgB,kBAAkB,CAAC,GAAG,EAAE,OAAO,GAAG,GAAG,IAAI;IAAE,IAAI,EAAE,MAAM,CAAC;IAAC,OAAO,EAAE,MAAM,CAAA;CAAE,CASzF;AAED;;;GAGG;AACH,wBAAgB,iBAAiB,CAAC,GAAG,EAAE;IAAE,IAAI,EAAE,MAAM,CAAC;IAAC,OAAO,EAAE,MAAM,CAAA;CAAE,GAAG,MAAM,CAYhF"}

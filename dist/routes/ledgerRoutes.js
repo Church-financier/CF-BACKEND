@@ -3,9 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const ledgerController_1 = require("../controllers/ledgerController");
 const rbacMiddleware_1 = require("../middleware/rbacMiddleware");
+const idempotencyMiddleware_1 = require("../middleware/idempotencyMiddleware");
 const validationMiddleware_1 = require("../middleware/validationMiddleware");
 const schemas_1 = require("../schemas");
 const router = (0, express_1.Router)();
+// General ledger transactions and reversals are replay-protected.
+router.use((0, idempotencyMiddleware_1.requireIdempotencyKey)());
 router.get("/", (0, rbacMiddleware_1.checkPermission)("ledger:read"), (0, validationMiddleware_1.validateQuery)(schemas_1.paginationQuerySchema), ledgerController_1.ledgerController.listLedgerEntries);
 router.get("/:id", (0, rbacMiddleware_1.checkPermission)("ledger:read"), ledgerController_1.ledgerController.getLedgerEntry);
 router.post("/", (0, rbacMiddleware_1.checkPermission)("ledger:create"), (0, validationMiddleware_1.validateBody)(schemas_1.createLedgerEntrySchema), ledgerController_1.ledgerController.createLedgerEntry);

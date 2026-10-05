@@ -1,7 +1,40 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.chartOfAccountsService = void 0;
+const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
+const appError_1 = require("../utils/appError");
+/** Resolves a parent by account code and rejects hierarchy cycles. */
+async function resolveParentId(parentAccountCode, organizationId, selfId) {
+    const parent = await prisma_1.prisma.chartOfAccounts.findFirst({
+        where: { code: parentAccountCode, organizationId },
+        select: { id: true, parentId: true },
+    });
+    if (!parent) {
+        throw (0, appError_1.unprocessable)(`Parent account code '${parentAccountCode}' not found`);
+    }
+    if (selfId) {
+        if (parent.id === selfId) {
+            throw (0, appError_1.unprocessable)("An account cannot be its own parent");
+        }
+        // Walk up the existing chain: re-parenting an account under its own
+        // descendant would orphan the subtree and make balances unreachable.
+        let cursor = parent.id;
+        const seen = new Set();
+        while (cursor && !seen.has(cursor)) {
+            if (cursor === selfId) {
+                throw (0, appError_1.unprocessable)("An account cannot be parented under one of its own children");
+            }
+            seen.add(cursor);
+            const node = await prisma_1.prisma.chartOfAccounts.findUnique({
+                where: { id: cursor },
+                select: { parentId: true },
+            });
+            cursor = node?.parentId ?? null;
+        }
+    }
+    return parent.id;
+}
 exports.chartOfAccountsService = {
     async create(data) {
         const { parentAccountCode, parentId, ...rest } = data;
@@ -59,6 +92,12 @@ exports.chartOfAccountsService = {
         ]);
         return { data, total };
     },
+    /**
+     * Edits an account: rename, re-code, change type, activate/deactivate, or
+     * re-link it to a parent account. Parent links may be given either as
+     * `parentAccountCode` (what the UI uses) or `parentId`, and an empty string
+     * detaches the account.
+     */
     async update(id, data, organizationId) {
         const updateData = {};
         if (data.code !== undefined)
@@ -67,13 +106,46 @@ exports.chartOfAccountsService = {
             updateData.name = data.name;
         if (data.type !== undefined)
             updateData.type = data.type;
-        if (data.parentId !== undefined) {
-            updateData.parentId = data.parentId || null;
-        }
         if (data.isActive !== undefined)
             updateData.isActive = data.isActive;
-        await prisma_1.prisma.chartOfAccounts.updateMany({ where: { id, organizationId }, data: updateData });
-        return prisma_1.prisma.chartOfAccounts.findFirst({ where: { id, organizationId }, include: { parent: true, children: true } });
+        if (data.parentAccountCode !== undefined) {
+            if (data.parentAccountCode === "") {
+                updateData.parentId = null;
+            }
+            else {
+                updateData.parentId = await resolveParentId(data.parentAccountCode, organizationId, id);
+            }
+        }
+        else if (data.parentId !== undefined) {
+            if (data.parentId === "") {
+                updateData.parentId = null;
+            }
+            else {
+                if (data.parentId === id) {
+                    throw (0, appError_1.unprocessable)("An account cannot be its own parent");
+                }
+                const parent = await prisma_1.prisma.chartOfAccounts.findFirst({
+                    where: { id: data.parentId, organizationId },
+                    select: { id: true },
+                });
+                if (!parent)
+                    throw (0, appError_1.unprocessable)("Parent account not found in organization");
+                updateData.parentId = data.parentId;
+            }
+        }
+        return prisma_1.prisma.$transaction(async (tx) => {
+            const result = await tx.chartOfAccounts.updateMany({
+                where: { id, organizationId },
+                data: updateData,
+            });
+            if (result.count === 0) {
+                throw (0, appError_1.unprocessable)("Account not found");
+            }
+            return tx.chartOfAccounts.findFirst({
+                where: { id, organizationId },
+                include: { parent: true, children: true },
+            });
+        }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable, timeout: 10000 });
     },
     async delete(id, organizationId) {
         const lineCount = await prisma_1.prisma.journalLine.count({

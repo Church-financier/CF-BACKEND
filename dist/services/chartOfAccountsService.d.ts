@@ -86,11 +86,18 @@ export declare const chartOfAccountsService: {
         }[];
         total: number;
     }>;
+    /**
+     * Edits an account: rename, re-code, change type, activate/deactivate, or
+     * re-link it to a parent account. Parent links may be given either as
+     * `parentAccountCode` (what the UI uses) or `parentId`, and an empty string
+     * detaches the account.
+     */
     update(id: string, data: {
         code?: string;
         name?: string;
         type?: AccountType;
         parentId?: string;
+        parentAccountCode?: string;
         isActive?: boolean;
     }, organizationId: string): Promise<({
         children: {

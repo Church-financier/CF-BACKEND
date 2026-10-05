@@ -190,6 +190,9 @@ exports.updateChartOfAccountSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).optional(),
     type: zod_1.z.enum(["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]).optional(),
     parentId: zod_1.z.string().optional(),
+    // Parent linking by account code, as the chart-of-accounts form submits it.
+    // An empty string detaches the account from its parent.
+    parentAccountCode: zod_1.z.string().optional(),
     isActive: zod_1.z.boolean().optional(),
 });
 exports.createMemberSchema = zod_1.z.object({

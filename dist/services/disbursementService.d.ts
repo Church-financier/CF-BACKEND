@@ -1,3 +1,4 @@
+import { canTransitionDisbursement, isTerminalDisbursementStatus } from "../utils/disbursementState";
 export interface CreateDisbursementInput {
     amountInKobo: bigint;
     purpose: string;
@@ -12,6 +13,8 @@ export interface CreateDisbursementInput {
     }>;
 }
 export declare const disbursementService: {
+    canTransition: typeof canTransitionDisbursement;
+    isTerminal: typeof isTerminalDisbursementStatus;
     createRequest(data: CreateDisbursementInput): Promise<{
         lineItems: {
             id: string;
@@ -160,7 +163,7 @@ export declare const disbursementService: {
         createdAt: Date;
         updatedAt: Date;
     }) | null>;
-    firstApprove(id: string, approverId: string, organizationId: string): Promise<{
+    firstApprove(id: string, approverId: string, organizationId: string): Promise<({
         firstApprovedBy: {
             email: string;
             name: string;
@@ -196,8 +199,8 @@ export declare const disbursementService: {
         paymentNotes: string | null;
         createdAt: Date;
         updatedAt: Date;
-    }>;
-    secondApprove(id: string, approverId: string, organizationId: string): Promise<{
+    }) | null>;
+    secondApprove(id: string, approverId: string, organizationId: string): Promise<({
         firstApprovedBy: {
             email: string;
             name: string;
@@ -233,8 +236,8 @@ export declare const disbursementService: {
         paymentNotes: string | null;
         createdAt: Date;
         updatedAt: Date;
-    }>;
-    rejectRequest(id: string, rejectedById: string, organizationId: string, reason?: string): Promise<{
+    }) | null>;
+    rejectRequest(id: string, rejectedById: string, organizationId: string, reason?: string): Promise<({
         lineItems: {
             id: string;
             organizationId: string;
@@ -262,7 +265,15 @@ export declare const disbursementService: {
         paymentNotes: string | null;
         createdAt: Date;
         updatedAt: Date;
-    }>;
+    }) | null>;
+    /**
+     * Releases a payment.
+     *
+     * The status change, the audit trail and the expense journal entry are one
+     * SERIALIZABLE transaction guarded by a row lock and a conditional update,
+     * so a double-clicked "Mark as paid" can produce exactly one payment and one
+     * set of ledger lines — or fail cleanly with a conflict.
+     */
     markPaid(id: string, payerId: string, organizationId: string, paymentData: {
         paymentMethod: string;
         paymentReference?: string;

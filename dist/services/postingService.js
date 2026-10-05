@@ -5,8 +5,9 @@ exports.postDisbursementJournalEntry = postDisbursementJournalEntry;
 const prisma_1 = require("../lib/prisma");
 const journalService_1 = require("./journalService");
 const index_1 = require("../index");
-async function findAccountByType(organizationId, type) {
-    const account = await prisma_1.prisma.chartOfAccounts.findFirst({
+async function findAccountByType(organizationId, type, client) {
+    const tx = (client ?? prisma_1.prisma);
+    const account = await tx.chartOfAccounts.findFirst({
         where: { organizationId, type, isActive: true },
         orderBy: { code: "asc" },
         select: { id: true },
@@ -14,9 +15,10 @@ async function findAccountByType(organizationId, type) {
     return account?.id ?? null;
 }
 async function postContributionJournalEntry(params) {
+    const tx = params.tx;
     const [cashAccountId, incomeAccountId] = await Promise.all([
-        findAccountByType(params.organizationId, "ASSET"),
-        findAccountByType(params.organizationId, "INCOME"),
+        findAccountByType(params.organizationId, "ASSET", tx),
+        findAccountByType(params.organizationId, "INCOME", tx),
     ]);
     if (!cashAccountId || !incomeAccountId)
         return;
@@ -31,17 +33,30 @@ async function postContributionJournalEntry(params) {
         reference: params.fundId,
         createdById: params.createdById,
         lines,
-    });
-    await prisma_1.prisma.ledgerEntry.update({
-        where: { id: params.ledgerEntryId },
-        data: { journalId: entry.id },
-    });
-    (0, index_1.emitToOrganization)(params.organizationId, "journal:posted", { entry });
+    }, tx);
+    // Inside a caller transaction the journal link must be written with the same
+    // client; outside it, link and emit as before.
+    if (tx) {
+        await tx.ledgerEntry.update({
+            where: { id: params.ledgerEntryId },
+            data: { journalId: entry.id },
+        });
+    }
+    else {
+        await prisma_1.prisma.ledgerEntry.update({
+            where: { id: params.ledgerEntryId },
+            data: { journalId: entry.id },
+        });
+    }
+    if (!tx) {
+        (0, index_1.emitToOrganization)(params.organizationId, "journal:posted", { entry });
+    }
 }
 async function postDisbursementJournalEntry(params) {
+    const tx = params.tx;
     const [expenseAccountId, cashAccountId] = await Promise.all([
-        findAccountByType(params.organizationId, "EXPENSE"),
-        findAccountByType(params.organizationId, "ASSET"),
+        findAccountByType(params.organizationId, "EXPENSE", tx),
+        findAccountByType(params.organizationId, "ASSET", tx),
     ]);
     if (!expenseAccountId || !cashAccountId)
         return;
@@ -55,7 +70,9 @@ async function postDisbursementJournalEntry(params) {
         description: `Disbursement: ${params.description}`,
         createdById: params.createdById,
         lines,
-    });
-    (0, index_1.emitToOrganization)(params.organizationId, "journal:posted", { entry });
+    }, tx);
+    if (!tx) {
+        (0, index_1.emitToOrganization)(params.organizationId, "journal:posted", { entry });
+    }
 }
 //# sourceMappingURL=postingService.js.map

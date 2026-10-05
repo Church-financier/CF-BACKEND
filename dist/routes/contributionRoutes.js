@@ -3,9 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const contributionController_1 = require("../controllers/contributionController");
 const rbacMiddleware_1 = require("../middleware/rbacMiddleware");
+const idempotencyMiddleware_1 = require("../middleware/idempotencyMiddleware");
 const validationMiddleware_1 = require("../middleware/validationMiddleware");
 const schemas_1 = require("../schemas");
 const router = (0, express_1.Router)();
+// Every contribution write is replay-protected: a double-clicked or retried
+// submission must not post a second ledger entry.
+router.use((0, idempotencyMiddleware_1.requireIdempotencyKey)());
 router.get("/funds", (0, rbacMiddleware_1.checkAnyPermission)("fund:read", "contribution:read", "pledge:read"), contributionController_1.contributionController.listContributionFunds);
 router.get("/member/:memberId/statement", (0, rbacMiddleware_1.checkPermission)("contribution:read"), contributionController_1.contributionController.getMemberStatement);
 router.get("/", (0, rbacMiddleware_1.checkPermission)("contribution:read"), (0, validationMiddleware_1.validateQuery)(schemas_1.paginationQuerySchema), contributionController_1.contributionController.listContributions);

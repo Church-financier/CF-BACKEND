@@ -229,6 +229,7 @@ export declare const updateChartOfAccountSchema: z.ZodObject<{
         LIABILITY: "LIABILITY";
     }>>;
     parentId: z.ZodOptional<z.ZodString>;
+    parentAccountCode: z.ZodOptional<z.ZodString>;
     isActive: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>;
 export declare const createMemberSchema: z.ZodObject<{
