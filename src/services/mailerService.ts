@@ -7,6 +7,7 @@ interface MailConfig {
   user: string;
   pass: string;
   from: string;
+  family: 4 | 6;
 }
 
 interface SendArgs {
@@ -26,7 +27,9 @@ function readConfig(): MailConfig | null {
   if (!host || !user || !pass || !from) return null;
 
   const port = portStr ? Number(portStr) : 587;
-  return { host, port, user, pass, from };
+  const familyStr = process.env.SMTP_FAMILY;
+  const family: 4 | 6 = familyStr === "6" ? 6 : 4;
+  return { host, port, user, pass, from, family };
 }
 
 let cachedTransporter: Transporter | null = null;
