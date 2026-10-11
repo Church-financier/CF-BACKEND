@@ -1,5 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { checkAnyPermission, checkPermission } from "../src/middleware/rbacMiddleware";
+import {
+  READ_ONLY_ROLES,
+  WRITE_METHODS,
+  checkAnyPermission,
+  checkPermission,
+  denyRoleWrites,
+  isReadOnlyRole,
+} from "../src/middleware/rbacMiddleware";
+import { requireRole } from "../src/middleware/authMiddleware";
+
+function makeRes() {
+  return {
+    statusCode: 200,
+    body: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
 
 function makeReq(role: string) {
   return { user: { id: "u1", email: "a@b.com", role, organizationId: "o1" } } as any;
@@ -214,5 +237,106 @@ describe("RBAC permission matrix", () => {
       throw new Error("next() should not be called");
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+/** Runs `denyRoleWrites` and reports the status it settled on (200 = passed on). */
+function runWriteGuard(role: string | undefined, method: string): { status: number; body?: any } {
+  const req = {
+    method,
+    user:
+      role === undefined
+        ? undefined
+        : { id: "u1", email: "a@b.com", role, organizationId: "o1" },
+  } as any;
+  const res = makeRes();
+  let passed = false;
+  denyRoleWrites(req, res, () => {
+    passed = true;
+  });
+  return { status: passed ? 200 : res.statusCode, body: res.body };
+}
+
+describe("read-only role guard", () => {
+  it("treats AUDITOR as read-only and nothing else", () => {
+    expect(READ_ONLY_ROLES).toContain("AUDITOR");
+    expect(isReadOnlyRole("AUDITOR")).toBe(true);
+    for (const role of ["SUPER_ADMIN", "TREASURER", "FINANCIAL_SECRETARY", "DEPARTMENT_HEAD"]) {
+      expect(isReadOnlyRole(role)).toBe(false);
+    }
+    expect(isReadOnlyRole(undefined)).toBe(false);
+    expect(isReadOnlyRole(null)).toBe(false);
+    expect(isReadOnlyRole("GUEST")).toBe(false);
+  });
+
+  it("blocks every write verb from AUDITOR with 403", () => {
+    for (const method of WRITE_METHODS) {
+      const { status, body } = runWriteGuard("AUDITOR", method);
+      expect(status, `${method} must be rejected`).toBe(403);
+      expect(body.error).toBe("Insufficient permissions");
+    }
+    // Lower-case verbs arrive that way from some clients; they must not slip past.
+    expect(runWriteGuard("AUDITOR", "post").status).toBe(403);
+    expect(runWriteGuard("AUDITOR", "delete").status).toBe(403);
+  });
+
+  it("lets AUDITOR read, including report generation and export", () => {
+    for (const method of ["GET", "HEAD", "OPTIONS"]) {
+      expect(runWriteGuard("AUDITOR", method).status, `${method} must pass through`).toBe(200);
+    }
+    // GET /reports/export is how the auditor obtains a PDF/CSV statement.
+    expect(runMiddleware("AUDITOR", "report:export")).toBe(200);
+    expect(runMiddleware("AUDITOR", "report:read")).toBe(200);
+    expect(runMiddleware("AUDITOR", "report:income")).toBe(200);
+    expect(runMiddleware("AUDITOR", "contribution:receipt")).toBe(200);
+  });
+
+  it("does not interfere with roles that must keep writing", () => {
+    for (const role of ["SUPER_ADMIN", "TREASURER", "FINANCIAL_SECRETARY", "DEPARTMENT_HEAD"]) {
+      for (const method of WRITE_METHODS) {
+        expect(runWriteGuard(role, method).status, `${role} ${method}`).toBe(200);
+      }
+    }
+    // An unknown role is not read-only, so per-route checkPermission remains
+    // the thing that rejects it — the guard must not mask that.
+    expect(runWriteGuard("GUEST", "POST").status).toBe(200);
+  });
+
+  it("returns 401 rather than 403 for an unauthenticated request", () => {
+    expect(runWriteGuard(undefined, "POST").status).toBe(401);
+  });
+});
+
+describe("requireRole", () => {
+  function runRoleGuard(role: string | undefined, allowed: string[]): number {
+    const req = role === undefined ? ({} as any) : makeReq(role);
+    const res = makeRes();
+    let passed = false;
+    requireRole(...allowed)(req, res, () => {
+      passed = true;
+    });
+    return passed ? 200 : res.statusCode;
+  }
+
+  it("lets the listed roles through and rejects everyone else", () => {
+    // GET /periods
+    expect(runRoleGuard("AUDITOR", ["SUPER_ADMIN", "TREASURER", "AUDITOR"])).toBe(200);
+    expect(runRoleGuard("TREASURER", ["SUPER_ADMIN", "TREASURER", "AUDITOR"])).toBe(200);
+    expect(runRoleGuard("FINANCIAL_SECRETARY", ["SUPER_ADMIN", "TREASURER", "AUDITOR"])).toBe(403);
+    expect(runRoleGuard("DEPARTMENT_HEAD", ["SUPER_ADMIN", "TREASURER", "AUDITOR"])).toBe(403);
+  });
+
+  it("keeps an auditor out of period locking", () => {
+    // POST /periods/lock
+    expect(runRoleGuard("AUDITOR", ["SUPER_ADMIN", "TREASURER"])).toBe(403);
+    expect(runRoleGuard("TREASURER", ["SUPER_ADMIN", "TREASURER"])).toBe(200);
+    // POST /periods/unlock
+    expect(runRoleGuard("AUDITOR", ["SUPER_ADMIN"])).toBe(403);
+    expect(runRoleGuard("TREASURER", ["SUPER_ADMIN"])).toBe(403);
+    expect(runRoleGuard("SUPER_ADMIN", ["SUPER_ADMIN"])).toBe(200);
+  });
+
+  it("returns 401 when there is no authenticated user", () => {
+    expect(runRoleGuard(undefined, ["SUPER_ADMIN"])).toBe(401);
   });
 });

@@ -24,6 +24,7 @@ const env_1 = require("./config/env");
 const env = (0, env_1.validateEnv)();
 const rateLimiter_1 = require("./middleware/rateLimiter");
 const tenantMiddleware_1 = require("./middleware/tenantMiddleware");
+const rbacMiddleware_1 = require("./middleware/rbacMiddleware");
 const errorHandler_1 = require("./middleware/errorHandler");
 const auditMiddleware_1 = require("./middleware/auditMiddleware");
 const sessionTimeoutMiddleware_1 = require("./middleware/sessionTimeoutMiddleware");
@@ -105,6 +106,9 @@ app.use("/api/portal", portalRoutes_1.default);
 const apiRouter = express_1.default.Router();
 apiRouter.use(tenantMiddleware_1.tenantScoped, tenantMiddleware_1.requireOrganization);
 apiRouter.use(sessionTimeoutMiddleware_1.sessionInactivityMiddleware);
+// The Auditor is view-only. Rejecting its write verbs here, ahead of every
+// resource router, means no module can reintroduce an unguarded mutation.
+apiRouter.use(rbacMiddleware_1.denyRoleWrites);
 apiRouter.use((req, res, next) => {
     if (["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) {
         const segments = req.path.replace(/^\/api\//, "").split("/").filter(Boolean);

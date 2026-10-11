@@ -15,7 +15,9 @@ function readConfig() {
     if (!host || !user || !pass || !from)
         return null;
     const port = portStr ? Number(portStr) : 587;
-    return { host, port, user, pass, from };
+    const familyStr = process.env.SMTP_FAMILY;
+    const family = familyStr === "6" ? 6 : 4;
+    return { host, port, user, pass, from, family };
 }
 let cachedTransporter = null;
 let cachedConfigKey = null;

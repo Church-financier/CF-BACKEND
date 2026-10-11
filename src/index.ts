@@ -20,6 +20,7 @@ const env = validateEnv();
 
 import { authLimiter, apiLimiter } from "./middleware/rateLimiter";
 import { tenantScoped, requireOrganization } from "./middleware/tenantMiddleware";
+import { denyRoleWrites } from "./middleware/rbacMiddleware";
 import { errorHandler } from "./middleware/errorHandler";
 import { auditAction } from "./middleware/auditMiddleware";
 import { sessionInactivityMiddleware } from "./middleware/sessionTimeoutMiddleware";
@@ -112,6 +113,10 @@ app.use("/api/portal", portalRoutes);
 const apiRouter = express.Router();
 apiRouter.use(tenantScoped, requireOrganization);
 apiRouter.use(sessionInactivityMiddleware);
+
+// The Auditor is view-only. Rejecting its write verbs here, ahead of every
+// resource router, means no module can reintroduce an unguarded mutation.
+apiRouter.use(denyRoleWrites);
 
 apiRouter.use((req, res, next) => {
   if (["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) {

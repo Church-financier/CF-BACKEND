@@ -1,7 +1,24 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthenticatedRequest } from "./authMiddleware";
 
-const PERMISSIONS: Record<string, string[]> = {
+/** HTTP verbs that mutate state. Anything an auditor may never invoke. */
+export const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
+
+/**
+ * Roles that are strictly view-only application-wide.
+ *
+ * The auditor exists to verify records, so it holds read permissions only and
+ * must never be able to create, update or delete anything. The UI hides the
+ * corresponding controls; `denyRoleWrites` below enforces the same rule at the
+ * API so a hand-crafted request cannot get around the hidden buttons.
+ */
+export const READ_ONLY_ROLES: readonly string[] = ["AUDITOR"];
+
+export function isReadOnlyRole(role: string | undefined | null): boolean {
+  return !!role && READ_ONLY_ROLES.includes(role);
+}
+
+export const PERMISSIONS: Record<string, string[]> = {
   SUPER_ADMIN: [
     "fund:create", "fund:read", "fund:update", "fund:delete",
     "ledger:create", "ledger:read", "ledger:reverse",
@@ -39,7 +56,10 @@ const PERMISSIONS: Record<string, string[]> = {
     "vendor:read",
     "report:income",
   ],
-   AUDITOR: [
+AUDITOR: [
+    // Read-only. Exporting a financial statement is a read of stored data, so
+    // the auditor keeps report:read / report:export / report:income, but no
+    // verb in this list may create, update or delete anything.
     "fund:read",
     "ledger:read",
     "disbursement:read",
@@ -86,4 +106,31 @@ export const checkAnyPermission = (...permissions: string[]) => {
     }
     next();
   };
+};
+
+/**
+ * Application-wide belt-and-braces guard for read-only roles.
+ *
+ * Mount immediately after `tenantScoped` on the tenant API router so it runs
+ * before every resource router. Any state-changing verb from a read-only role
+ * is rejected with 403 before it can reach a controller, which closes routes
+ * that rely on per-route `checkPermission` alone (or that were missed).
+ *
+ * Reads, including report export, are untouched.
+ */
+export const denyRoleWrites = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  if (!isReadOnlyRole(req.user.role)) {
+    return next();
+  }
+  const method = req.method.toUpperCase();
+  if (!(WRITE_METHODS as readonly string[]).includes(method)) {
+    return next();
+  }
+  return res.status(403).json({
+    error: "Insufficient permissions",
+    message: "The Auditor role is view-only and cannot modify records.",
+  });
 };
